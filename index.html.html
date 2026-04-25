@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>💑 우리 둘만의 공간</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, onValue, push, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBlZ_R9WwcD_cDSskA-kqA0PA1v301J8sY",
+    authDomain: "mandoo-6d171.firebaseapp.com",
+    projectId: "mandoo-6d171",
+    storageBucket: "mandoo-6d171.firebasestorage.app",
+    messagingSenderId: "170871546396",
+    appId: "1:170871546396:web:0fb406e96f0930a79f75d9",
+    measurementId: "G-G96Z5NSH0Y",
+    databaseURL: "https://mandoo-6d171-default-rtdb.firebaseio.com"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  const ROLES = {
+    boyfriend: { label: "💜 남자친구", short: "남자친구", badge: "badge-bf" },
+    girlfriend: { label: "💗 여자친구", short: "여자친구", badge: "badge-gf" }
+  };
+
+  let myRole = null;
+
+  const WD = ["일","월","화","수","목","금","토"];
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}년 ${String(d.getMonth()+1).padStart(2,'0')}월 ${String(d.getDate()).padStart(2,'0')}일 (${WD[d.getDay()]})`;
+  }
+  function parseDateStr(str) { const [y,m,d]=str.split('-').map(Number); return new Date(y,m-1,d); }
+  function formatDateKr(str) { const d=parseDateStr(str); return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${WD[d.getDay()]})`; }
+  function diffDays(d1,d2) { return Math.floor((d2-d1)/86400000); }
+
+  const MOOD = {
+    "☀️": { label:"맑음", desc:"기분 최고 ☀️", color:"#f59e0b", bg:"linear-gradient(135deg,#fef3c7,#fde68a)", tag:"background:#fef3c7;color:#d97706;" },
+    "🌤": { label:"구름", desc:"그럭저럭 🌤", color:"#0ea5e9", bg:"linear-gradient(135deg,#e0f2fe,#bae6fd)", tag:"background:#e0f2fe;color:#0369a1;" },
+    "🌧": { label:"비",   desc:"좀 힘들어 🌧", color:"#3b82f6", bg:"linear-gradient(135deg,#eff6ff,#bfdbfe)", tag:"background:#eff6ff;color:#1d4ed8;" },
+    "⛈":  { label:"천둥", desc:"많이 힘들어 ⛈", color:"#7c3aed", bg:"linear-gradient(135deg,#f5f3ff,#ddd6fe)", tag:"background:#f5f3ff;color:#6d28d9;" },
+  };
+
+  const START_DATE = new Date(2025, 0, 31);
+
+  window.chooseRole = function(role) {
+    myRole = role;
+    localStorage.setItem("myRole", role);
+    document.getElementById("login-screen").style.display = "none";
+    document.getElementById("main-screen").style.display = "block";
+
+    const r = ROLES[role];
+    const badge = document.getElementById("my-role-badge");
+    badge.textContent = r.label;
+    badge.className = "role-badge " + r.badge;
+
+    const days = diffDays(START_DATE, new Date()) + 1;
+    document.getElementById("dday").textContent = `✨ 함께한 지 D+${days.toLocaleString()}일`;
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    listenMoods();
+    listenDiaries();
+    listenSchedules();
+  };
+
+  // ── 감정 날씨 ──
+  function listenMoods() {
+    onValue(ref(db, 'moods'), snap => renderMoods(snap.val() || {}));
+  }
+
+  window.setMood = function(emoji) {
+    set(ref(db, `moods/${myRole}`), { emoji, ts: Date.now() });
+  };
+
+  function renderMoods(data) {
+    const partnerRole = myRole === "boyfriend" ? "girlfriend" : "boyfriend";
+    const myEmoji = data[myRole]?.emoji || null;
+    const partnerEmoji = data[partnerRole]?.emoji || null;
+    const r = ROLES[myRole];
+    const pr = ROLES[partnerRole];
+
+    document.querySelectorAll('.mood-btn').forEach(btn =>
+      btn.classList.toggle('selected', btn.dataset.mood === myEmoji));
+
+    const myCard = document.getElementById('my-mood-card');
+    if (myEmoji && MOOD[myEmoji]) {
+      const m = MOOD[myEmoji];
+      myCard.style.background = m.bg;
+      myCard.innerHTML = `<div class="sc-label"><span class="role-badge ${r.badge}">${r.label}</span></div><div class="sc-emoji">${myEmoji}</div><div class="sc-mood">${m.desc}</div>`;
+    } else {
+      myCard.style.background = "rgba(237,233,254,0.18)";
+      myCard.innerHTML = `<div class="sc-label"><span class="role-badge ${r.badge}">${r.label}</span></div><div class="sc-emoji" style="opacity:.22">❓</div><div class="sc-mood" style="color:#b09ec9">아직 선택 전</div>`;
+    }
+
+    const partnerCard = document.getElementById('partner-mood-card');
+    if (partnerEmoji && MOOD[partnerEmoji]) {
+      const m = MOOD[partnerEmoji];
+      partnerCard.style.background = m.bg;
+      partnerCard.innerHTML = `<div class="sc-label"><span class="role-badge ${pr.badge}">${pr.label}</span></div><div class="sc-emoji">${partnerEmoji}</div><div class="sc-mood">${m.desc}</div>`;
+    } else {
+      partnerCard.style.background = "rgba(252,231,243,0.18)";
+      partnerCard.innerHTML = `<div class="sc-label"><span class="role-badge ${pr.badge}">${pr.label}</span></div><div class="sc-emoji" style="opacity:.22">💤</div><div class="sc-mood" style="color:#b09ec9">아직 선택 안 했어요</div>`;
+    }
+
+    const banner = document.getElementById('mood-banner');
+    if (partnerEmoji) {
+      let msg, icon;
+      if (["🌧","⛈"].includes(partnerEmoji)) { msg=`<strong>${pr.short}</strong>이(가) 지금 힘든 것 같아요 😔<br>따뜻한 말 한 마디 건네봐요 💜`; icon="💝"; }
+      else if (partnerEmoji === "☀️") { msg=`<strong>${pr.short}</strong>의 기분이 오늘 최고예요! 🎉`; icon="🌟"; }
+      else { msg=`<strong>${pr.short}</strong>은(는) 지금 평범한 하루를 보내고 있어요 🌤`; icon="💬"; }
+      banner.innerHTML = `<span class="alert-icon">${icon}</span><div class="alert-text">${msg}</div>`;
+      banner.style.display = "flex";
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  // ── 일기 ──
+  function listenDiaries() {
+    onValue(ref(db, 'diaries'), snap => renderDiaries(snap.val() || {}));
+  }
+
+  window.saveDiary = function() {
+    const content = document.getElementById('diary-input').value.trim();
+    const mood = document.getElementById('diary-mood').value;
+    if (!content) { toast('📝 내용을 입력해줘요!', 'warn'); return; }
+    const key = push(ref(db, 'diaries')).key;
+    set(ref(db, `diaries/${key}`), { content, mood, role: myRole, date: todayStr(), ts: Date.now() });
+    document.getElementById('diary-input').value = '';
+    toast('✨ 일기가 저장됐어요! 오늘도 수고했어요 💜');
+  };
+
+  function renderDiaries(data) {
+    const list = Object.entries(data).sort((a,b) => b[1].ts - a[1].ts);
+    const el = document.getElementById('diary-list');
+    const COLORS = ['#f9a8d4','#c4b5fd','#93c5fd','#6ee7b7'];
+    if (!list.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">📝</div><p>아직 일기가 없어요<br>첫 번째 일기를 작성해봐요 💜</p></div>`;
+      return;
+    }
+    el.innerHTML = list.map(([key, e], i) => {
+      const m = MOOD[e.mood] || MOOD["☀️"];
+      const r = ROLES[e.role] || ROLES.boyfriend;
+      const isMe = e.role === myRole;
+      return `<div class="diary-card" style="border-left-color:${COLORS[i%4]}">
+        <div class="diary-header">
+          <span class="diary-date">📅 ${e.date}</span>
+          <span class="role-badge ${r.badge}" style="font-size:.62rem">${r.label}</span>
+        </div>
+        <div class="diary-content">"${e.content}"</div>
+        <div class="diary-footer">
+          <span class="diary-mood-tag" style="${m.tag}">${e.mood} ${m.label}</span>
+          ${isMe ? `<button class="del-btn" onclick="deleteDiary('${key}')">🗑️</button>` : '<span></span>'}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  window.deleteDiary = function(key) {
+    if (confirm('이 일기를 삭제할까요?')) remove(ref(db, `diaries/${key}`));
+  };
+
+  // ── 일정 ──
+  function listenSchedules() {
+    onValue(ref(db, 'schedules'), snap => renderSchedules(snap.val() || {}));
+  }
+
+  window.addSchedule = function() {
+    const title = document.getElementById('sched-title').value.trim();
+    const date = document.getElementById('sched-date').value;
+    const important = document.getElementById('sched-important').checked;
+    if (!title || !date) { toast('제목과 날짜를 입력해줘요!', 'warn'); return; }
+    const key = push(ref(db, 'schedules')).key;
+    set(ref(db, `schedules/${key}`), { title, date, important, role: myRole });
+    document.getElementById('sched-title').value = '';
+    toast('✅ 일정이 추가됐어요!');
+  };
+
+  function renderSchedules(data) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const list = Object.entries(data).sort((a,b) => a[1].date.localeCompare(b[1].date));
+    const upcoming = list.filter(([,s]) => parseDateStr(s.date) >= today);
+    const past = list.filter(([,s]) => parseDateStr(s.date) < today).reverse();
+
+    function card([key, s]) {
+      const d = parseDateStr(s.date); d.setHours(0,0,0,0);
+      const delta = diffDays(today, d);
+      const isToday = delta === 0, isPast = delta < 0;
+      const boxCls = isToday ? 'today' : isPast ? 'past' : 'upcoming';
+      const badge = isToday ? `<span class="schedule-badge badge-today">오늘!</span>`
+        : isPast ? `<span class="schedule-badge badge-past">${Math.abs(delta)}일 전</span>`
+        : `<span class="schedule-badge badge-dday">D-${delta}</span>`;
+      const r = ROLES[s.role] || ROLES.boyfriend;
+      return `<div class="schedule-card ${s.important ? 'important' : ''}">
+        <div class="schedule-date-box ${boxCls}">
+          <span class="sdb-month">${d.getMonth()+1}월</span>
+          <span class="sdb-day">${d.getDate()}</span>
+        </div>
+        <div class="schedule-info">
+          <div class="schedule-title">${s.important ? '⭐ ' : ''}${s.title}</div>
+          <div class="schedule-meta">${formatDateKr(s.date)} <span class="role-badge ${r.badge}" style="font-size:.57rem;margin-left:3px">${r.label}</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+          ${badge}
+          <button class="del-btn" onclick="deleteSchedule('${key}')">🗑️</button>
+        </div>
+      </div>`;
+    }
+
+    const upEl = document.getElementById('upcoming-schedules');
+    upEl.innerHTML = upcoming.length ? upcoming.map(card).join('')
+      : `<div class="empty-state"><div class="empty-icon">🗓</div><p>다가오는 일정이 없어요!<br>새 일정을 추가해봐요 ✨</p></div>`;
+
+    const pastEl = document.getElementById('past-schedules');
+    if (past.length) {
+      pastEl.style.display = 'block';
+      pastEl.innerHTML = `<div class="section-title" style="opacity:.5;margin-top:1.5rem">✅ 지난 일정</div>` + past.map(card).join('');
+    } else { pastEl.style.display = 'none'; }
+  }
+
+  window.deleteSchedule = function(key) {
+    if (confirm('이 일정을 삭제할까요?')) remove(ref(db, `schedules/${key}`));
+  };
+
+  // ── 토스트 ──
+  function toast(msg, type = 'ok') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (type === 'warn' ? ' toast-warn' : '');
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+  window.toast = toast;
+
+  window.logout = function() { localStorage.removeItem('myRole'); location.reload(); };
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('myRole');
+    if (saved && ROLES[saved]) chooseRole(saved);
+    const sd = document.getElementById('sched-date');
+    if (sd) sd.value = new Date().toISOString().split('T')[0];
+  });
+</script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans KR',sans-serif;background:linear-gradient(145deg,#fff9f5 0%,#fdf0f8 45%,#f3f0ff 100%);min-height:100vh;color:#3d2c5e}
+
+/* ── 로그인 ── */
+#login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;text-align:center}
+.login-hearts{font-size:3.2rem;animation:float 3s ease-in-out infinite}
+.login-title{font-family:'Gowun Dodum',serif;font-size:2.4rem;color:#3d2c5e;margin-top:.6rem}
+.login-sub{font-size:.78rem;color:#b09ec9;letter-spacing:2px;margin:.4rem 0 2.5rem}
+.login-card{background:rgba(255,255,255,.92);border-radius:28px;padding:2.5rem 2rem;box-shadow:0 12px 40px rgba(180,160,220,.18);width:100%;max-width:340px}
+.login-q{font-size:1rem;color:#7c6ea0;font-weight:600;margin-bottom:1.5rem}
+.login-btns{display:flex;flex-direction:column;gap:12px}
+.role-btn{padding:1.1rem;border-radius:18px;border:none;font-family:'Gowun Dodum',serif;font-size:1.15rem;font-weight:700;cursor:pointer;transition:all .25s}
+.btn-bf{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:white;box-shadow:0 5px 16px rgba(109,40,217,.35)}
+.btn-bf:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(109,40,217,.45)}
+.btn-gf{background:linear-gradient(135deg,#ec4899,#db2777);color:white;box-shadow:0 5px 16px rgba(219,39,119,.35)}
+.btn-gf:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(219,39,119,.45)}
+
+/* ── 메인 ── */
+#main-screen{display:none;max-width:700px;margin:0 auto;padding:0 1rem 4rem}
+
+/* ── 헤더 ── */
+.app-header{text-align:center;padding:1.8rem 1rem 1rem}
+.app-title{font-family:'Gowun Dodum',serif;font-size:1.9rem;color:#3d2c5e}
+.app-sub{font-size:.74rem;color:#b09ec9;letter-spacing:2px;margin-top:2px}
+.header-meta{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:.65rem;flex-wrap:wrap}
+.dday-badge{background:linear-gradient(135deg,#f9a8d4,#c4b5fd);color:white;font-size:.74rem;font-weight:700;padding:4px 14px;border-radius:20px;box-shadow:0 2px 8px rgba(196,181,253,.4)}
+.logout-btn{background:none;border:none;font-size:.7rem;color:#c4b5fd;cursor:pointer;text-decoration:underline;font-family:inherit}
+
+/* ── 역할 뱃지 ── */
+.role-badge{display:inline-flex;align-items:center;font-size:.7rem;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.badge-bf{background:linear-gradient(135deg,#ede9fe,#ddd6fe);color:#5b21b6}
+.badge-gf{background:linear-gradient(135deg,#fce7f3,#fbcfe8);color:#9d174d}
+
+/* ── 탭 ── */
+.tab-nav{display:flex;background:rgba(255,255,255,.75);border-radius:18px;padding:6px;gap:5px;box-shadow:0 2px 14px rgba(180,160,220,.14);margin-bottom:1.4rem;backdrop-filter:blur(12px)}
+.tab-btn{flex:1;border:none;background:transparent;border-radius:13px;padding:9px 4px;font-family:'Noto Sans KR',sans-serif;font-size:.82rem;font-weight:500;color:#9b8ab8;cursor:pointer;transition:all .22s}
+.tab-btn.active{background:linear-gradient(135deg,#f9a8d4,#c4b5fd);color:white;box-shadow:0 3px 12px rgba(196,181,253,.5)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ── 섹션 타이틀 ── */
+.section-title{font-family:'Gowun Dodum',serif;font-size:1rem;color:#3d2c5e;font-weight:700;margin:1.2rem 0 .7rem;display:flex;align-items:center;gap:8px}
+.section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,#e9d5ff,transparent)}
+
+/* ── 카드 ── */
+.card{background:rgba(255,255,255,.88);border-radius:20px;padding:1.3rem;margin-bottom:1rem;box-shadow:0 4px 20px rgba(180,160,220,.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.95)}
+
+/* ── 감정 버튼 ── */
+.mood-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:.7rem 0}
+.mood-btn{background:rgba(255,255,255,.82);border:2px solid #e9d5ff;border-radius:16px;padding:.85rem .3rem;text-align:center;cursor:pointer;transition:all .2s;font-family:inherit}
+.mood-btn:hover{transform:translateY(-3px);box-shadow:0 5px 14px rgba(0,0,0,.1)}
+.mood-btn.selected{border-color:#c4b5fd;background:linear-gradient(135deg,#fdf4ff,#f3f0ff);box-shadow:0 4px 14px rgba(196,181,253,.3);transform:translateY(-2px)}
+.mood-emoji{font-size:1.9rem}
+.mood-label{font-size:.67rem;font-weight:700;color:#9b8ab8;margin-top:4px}
+.mood-btn.selected .mood-label{color:#6d28d9}
+
+/* ── 상태 카드 ── */
+.mood-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:.7rem 0}
+.status-card{border-radius:18px;padding:1.2rem .8rem;text-align:center;border:1.5px solid rgba(196,181,253,.28);transition:all .35s}
+.sc-label{margin-bottom:.4rem}
+.sc-emoji{font-size:2.6rem;display:block;margin:.2rem 0;animation:float 3s ease-in-out infinite}
+.sc-mood{font-size:.78rem;color:#7c6ea0;margin-top:.3rem}
+
+/* ── 배너 ── */
+.partner-alert{background:linear-gradient(135deg,#fdf4ff,#f0f9ff);border:1.5px solid #e9d5ff;border-radius:16px;padding:.85rem 1.1rem;margin:.6rem 0;display:none;align-items:center;gap:10px}
+.alert-icon{font-size:1.5rem;flex-shrink:0}
+.alert-text{font-size:.82rem;color:#5b21b6;font-weight:500;line-height:1.5}
+.alert-text strong{color:#3d2c5e}
+
+/* ── 입력 ── */
+input[type="text"],input[type="date"],textarea,select{width:100%;border:1.5px solid #e9d5ff;border-radius:13px;padding:.65rem .9rem;font-family:'Noto Sans KR',sans-serif;font-size:.87rem;color:#3d2c5e;background:rgba(255,255,255,.82);outline:none;transition:all .2s;margin-bottom:.65rem;-webkit-appearance:none}
+input:focus,textarea:focus,select:focus{border-color:#c4b5fd;box-shadow:0 0 0 3px rgba(196,181,253,.18)}
+textarea{resize:vertical;min-height:88px}
+.btn-primary{width:100%;padding:.72rem;border-radius:14px;border:none;background:linear-gradient(135deg,#f9a8d4,#c4b5fd);color:white;font-family:'Noto Sans KR',sans-serif;font-size:.88rem;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(196,181,253,.4);transition:all .2s}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(196,181,253,.5)}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.checkbox-row{display:flex;align-items:center;gap:8px;margin-bottom:.65rem}
+.checkbox-row input{width:auto;margin:0;accent-color:#c4b5fd}
+.checkbox-row label{font-size:.82rem;color:#7c6ea0;cursor:pointer}
+
+/* ── 일기 카드 ── */
+.diary-card{background:rgba(255,255,255,.88);border-radius:16px;padding:1rem 1.2rem;margin-bottom:.65rem;border-left:4px solid;box-shadow:0 3px 12px rgba(0,0,0,.055);transition:transform .2s}
+.diary-card:hover{transform:translateX(4px)}
+.diary-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.45rem}
+.diary-date{font-size:.67rem;color:#b09ec9;font-weight:600}
+.diary-content{font-size:.92rem;color:#3d2c5e;line-height:1.65;font-family:'Gowun Dodum',serif}
+.diary-footer{display:flex;align-items:center;justify-content:space-between;margin-top:.5rem}
+.diary-mood-tag{display:inline-block;font-size:.65rem;padding:2px 10px;border-radius:20px;font-weight:600}
+
+/* ── 일정 카드 ── */
+.schedule-card{background:rgba(255,255,255,.88);border-radius:16px;padding:1rem 1.1rem;margin-bottom:.65rem;display:flex;align-items:center;gap:.9rem;box-shadow:0 3px 12px rgba(0,0,0,.055);transition:all .2s}
+.schedule-card:hover{transform:translateY(-2px)}
+.schedule-card.important{background:linear-gradient(135deg,rgba(253,244,255,.92),rgba(243,240,255,.92));border:1.5px solid #e9d5ff}
+.schedule-date-box{min-width:46px;height:46px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+.schedule-date-box.upcoming{background:linear-gradient(135deg,#f9a8d4,#c4b5fd);color:white;box-shadow:0 3px 10px rgba(196,181,253,.4)}
+.schedule-date-box.past{background:#f3f4f6;color:#9ca3af}
+.schedule-date-box.today{background:linear-gradient(135deg,#fde68a,#fca5a5);color:white}
+.sdb-month{font-size:.52rem;letter-spacing:.5px}
+.sdb-day{font-size:1.2rem;line-height:1}
+.schedule-info{flex:1}
+.schedule-title{font-size:.88rem;font-weight:700;color:#3d2c5e}
+.schedule-meta{font-size:.69rem;color:#9b8ab8;margin-top:3px}
+.schedule-badge{font-size:.58rem;padding:2px 9px;border-radius:20px;font-weight:700;white-space:nowrap}
+.badge-dday{background:linear-gradient(135deg,#f9a8d4,#c4b5fd);color:white}
+.badge-past{background:#f3f4f6;color:#9ca3af}
+.badge-today{background:linear-gradient(135deg,#fde68a,#fca5a5);color:white;animation:pulse 2s infinite}
+
+/* ── 공통 ── */
+.del-btn{background:none;border:none;font-size:.85rem;cursor:pointer;opacity:.32;transition:all .2s;padding:4px 5px;border-radius:6px}
+.del-btn:hover{opacity:1;background:rgba(255,80,80,.08)}
+.empty-state{text-align:center;padding:2.5rem 1rem;color:#b09ec9}
+.empty-icon{font-size:2.4rem;margin-bottom:.7rem}
+.empty-state p{font-size:.82rem;line-height:1.65}
+.toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(80px);background:#3d2c5e;color:white;padding:.7rem 1.4rem;border-radius:24px;font-size:.82rem;font-weight:600;box-shadow:0 6px 24px rgba(0,0,0,.2);transition:transform .3s,opacity .3s;opacity:0;z-index:999;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.toast.toast-warn{background:#d97706}
+.footer{text-align:center;padding:2rem 0 1rem;color:#c4b5fd;font-size:.68rem;letter-spacing:1.5px}
+
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.65}}
+
+@media(max-width:480px){
+  .mood-grid{grid-template-columns:repeat(2,1fr)}
+  .app-title{font-size:1.55rem}
+  .tab-btn{font-size:.75rem}
+}
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div id="login-screen">
+  <div class="login-hearts">💑</div>
+  <div class="login-title">우리 둘만의 공간</div>
+  <div class="login-sub">OUR LITTLE WORLD</div>
+  <div class="login-card">
+    <div class="login-q">나는 누구예요? 💜</div>
+    <div class="login-btns">
+      <button class="role-btn btn-bf" onclick="chooseRole('boyfriend')">💜 남자친구예요</button>
+      <button class="role-btn btn-gf" onclick="chooseRole('girlfriend')">💗 여자친구예요</button>
+    </div>
+  </div>
+</div>
+
+<!-- 메인 -->
+<div id="main-screen">
+  <div class="app-header">
+    <div class="app-title">💑 우리 둘만의 공간</div>
+    <div class="app-sub">OUR LITTLE WORLD</div>
+    <div class="header-meta">
+      <span id="dday" class="dday-badge"></span>
+      <span id="my-role-badge" class="role-badge"></span>
+      <button class="logout-btn" onclick="logout()">역할 바꾸기</button>
+    </div>
+  </div>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="tab-mood">🌤 감정날씨</button>
+    <button class="tab-btn" data-tab="tab-diary">✍️ 일기</button>
+    <button class="tab-btn" data-tab="tab-schedule">📌 일정</button>
+  </nav>
+
+  <!-- 감정 날씨 -->
+  <div id="tab-mood" class="tab-panel active">
+    <div class="section-title">🌈 오늘 내 감정 날씨</div>
+    <p style="font-size:.8rem;color:#9b8ab8;margin-bottom:.6rem">기분을 선택하면 상대방에게 바로 전달돼요 💬</p>
+    <div class="mood-grid">
+      <button class="mood-btn" data-mood="☀️" onclick="setMood('☀️')"><div class="mood-emoji">☀️</div><div class="mood-label">맑음</div></button>
+      <button class="mood-btn" data-mood="🌤" onclick="setMood('🌤')"><div class="mood-emoji">🌤</div><div class="mood-label">구름</div></button>
+      <button class="mood-btn" data-mood="🌧" onclick="setMood('🌧')"><div class="mood-emoji">🌧</div><div class="mood-label">비</div></button>
+      <button class="mood-btn" data-mood="⛈" onclick="setMood('⛈')"><div class="mood-emoji">⛈</div><div class="mood-label">천둥</div></button>
+    </div>
+    <div class="section-title">💌 우리의 현재 감정</div>
+    <div class="mood-cards">
+      <div id="my-mood-card" class="status-card">
+        <div class="sc-label"></div>
+        <div class="sc-emoji" style="opacity:.22">❓</div>
+        <div class="sc-mood" style="color:#b09ec9">아직 선택 전</div>
+      </div>
+      <div id="partner-mood-card" class="status-card">
+        <div class="sc-label"></div>
+        <div class="sc-emoji" style="opacity:.22">💤</div>
+        <div class="sc-mood" style="color:#b09ec9">대기중이에요</div>
+      </div>
+    </div>
+    <div id="mood-banner" class="partner-alert"></div>
+  </div>
+
+  <!-- 일기 -->
+  <div id="tab-diary" class="tab-panel">
+    <div class="section-title">✍️ 오늘의 한 줄</div>
+    <div class="card">
+      <textarea id="diary-input" placeholder="오늘 하루 어땠나요? 솔직한 마음을 적어봐요 💜&#10;짧아도 괜찮아요, 한 줄이면 충분해요 ✨"></textarea>
+      <div class="two-col">
+        <select id="diary-mood">
+          <option value="☀️">☀️ 맑음</option>
+          <option value="🌤">🌤 구름</option>
+          <option value="🌧">🌧 비</option>
+          <option value="⛈">⛈ 천둥</option>
+        </select>
+        <button class="btn-primary" onclick="saveDiary()">💾 저장하기</button>
+      </div>
+    </div>
+    <div class="section-title">📖 우리의 기록들</div>
+    <div id="diary-list"></div>
+  </div>
+
+  <!-- 일정 -->
+  <div id="tab-schedule" class="tab-panel">
+    <div class="section-title">📌 일정 추가</div>
+    <div class="card">
+      <input type="text" id="sched-title" placeholder="예: 💑 기념일, 🎂 생일, 🎬 영화 데이트">
+      <input type="date" id="sched-date">
+      <div class="checkbox-row">
+        <input type="checkbox" id="sched-important">
+        <label for="sched-important">⭐ 중요 일정으로 표시</label>
+      </div>
+      <button class="btn-primary" onclick="addSchedule()">➕ 일정 추가</button>
+    </div>
+    <div class="section-title">🗓 다가오는 일정</div>
+    <div id="upcoming-schedules"></div>
+    <div id="past-schedules" style="display:none"></div>
+  </div>
+
+  <div class="footer">💑 우리 둘만의 공간 · made with love</div>
+</div>
+
+<div id="toast" class="toast"></div>
+</body>
+</html>
