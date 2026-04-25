@@ -31,6 +31,8 @@
   };
 
   let myRole = null;
+  let selectedMoodKey = null; // 선택된 감정 종류
+  let selectedLevel = null;   // 선택된 단계 1~3
 
   const WD = ["일","월","화","수","목","금","토"];
   function todayStr() {
@@ -41,11 +43,24 @@
   function formatDateKr(str) { const d=parseDateStr(str); return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${WD[d.getDay()]})`; }
   function diffDays(d1,d2) { return Math.floor((d2-d1)/86400000); }
 
+  // ── 6가지 감정 정의 ──
   const MOOD = {
-    "☀️": { label:"맑음", desc:"기분 최고 ☀️", color:"#f59e0b", bg:"linear-gradient(135deg,#fef3c7,#fde68a)", tag:"background:#fef3c7;color:#d97706;" },
-    "🌤": { label:"구름", desc:"그럭저럭 🌤", color:"#0ea5e9", bg:"linear-gradient(135deg,#e0f2fe,#bae6fd)", tag:"background:#e0f2fe;color:#0369a1;" },
-    "🌧": { label:"비",   desc:"좀 힘들어 🌧", color:"#3b82f6", bg:"linear-gradient(135deg,#eff6ff,#bfdbfe)", tag:"background:#eff6ff;color:#1d4ed8;" },
-    "⛈":  { label:"천둥", desc:"많이 힘들어 ⛈", color:"#7c3aed", bg:"linear-gradient(135deg,#f5f3ff,#ddd6fe)", tag:"background:#f5f3ff;color:#6d28d9;" },
+    "sunny":  { emoji:"☀️",  label:"맑음",  keyword:"행복해",   bg:"linear-gradient(135deg,#fef3c7,#fde68a)", color:"#f59e0b", tag:"background:#fef3c7;color:#d97706;" },
+    "cloudy": { emoji:"🌤",  label:"구름",  keyword:"그럭저럭", bg:"linear-gradient(135deg,#e0f2fe,#bae6fd)", color:"#0ea5e9", tag:"background:#e0f2fe;color:#0369a1;" },
+    "rainy":  { emoji:"🌧",  label:"비",    keyword:"짜증나·예민해", bg:"linear-gradient(135deg,#eff6ff,#bfdbfe)", color:"#3b82f6", tag:"background:#eff6ff;color:#1d4ed8;" },
+    "stormy": { emoji:"⛈",  label:"천둥",  keyword:"화나",     bg:"linear-gradient(135deg,#f5f3ff,#ddd6fe)", color:"#7c3aed", tag:"background:#f5f3ff;color:#6d28d9;" },
+    "foggy":  { emoji:"🌫️", label:"안개",  keyword:"슬퍼·우울해", bg:"linear-gradient(135deg,#f1f5f9,#e2e8f0)", color:"#64748b", tag:"background:#f1f5f9;color:#475569;" },
+    "snowy":  { emoji:"🌨",  label:"눈",    keyword:"힘들어",   bg:"linear-gradient(135deg,#f0f9ff,#e0f2fe)", color:"#0891b2", tag:"background:#f0f9ff;color:#0e7490;" },
+  };
+
+  // 단계별 설명
+  const LEVEL_DESC = {
+    "sunny":  ["살짝 행복해 😊","꽤 행복해 😄","너무 행복해 🥰"],
+    "cloudy": ["그냥 그래 😐","좀 그래 😑","완전 그럭저럭 😶"],
+    "rainy":  ["살짝 짜증나 😤","꽤 예민해 😠","너무 짜증나 🤬"],
+    "stormy": ["살짝 화나 😡","꽤 화나 😤","엄청 화나 💢"],
+    "foggy":  ["좀 슬퍼 😢","꽤 우울해 😞","너무 힘들어 😭"],
+    "snowy":  ["살짝 힘들어 😓","꽤 힘들어 😔","너무 힘들어 🥺"],
   };
 
   const START_DATE = new Date(2021, 11, 24);
@@ -78,56 +93,131 @@
     listenSchedules();
   };
 
-  // ── 감정 날씨 ──
+  // ── 감정 선택 Step 1: 감정 종류 ──
+  window.selectMoodKey = function(key) {
+    selectedMoodKey = key;
+    selectedLevel = null;
+
+    // 감정 버튼 하이라이트
+    document.querySelectorAll('.mood-btn').forEach(btn =>
+      btn.classList.toggle('selected', btn.dataset.key === key));
+
+    // 단계 선택 패널 표시
+    const panel = document.getElementById('level-panel');
+    const m = MOOD[key];
+    const descs = LEVEL_DESC[key];
+    panel.style.display = 'block';
+    panel.innerHTML = `
+      <div class="level-title">${m.emoji} ${m.label} — 얼마나?</div>
+      <div class="level-btns">
+        ${descs.map((d,i) => `
+          <button class="level-btn" data-level="${i+1}" onclick="selectLevel(${i+1})" style="border-color:${m.color}20">
+            <span class="level-num">단계 ${i+1}</span>
+            <span class="level-desc">${d}</span>
+          </button>
+        `).join('')}
+      </div>`;
+  };
+
+  // ── Step 2: 단계 선택 후 저장 ──
+  window.selectLevel = function(level) {
+    selectedLevel = level;
+    document.querySelectorAll('.level-btn').forEach(btn =>
+      btn.classList.toggle('selected', parseInt(btn.dataset.level) === level));
+
+    if (selectedMoodKey && selectedLevel) {
+      set(ref(db, `moods/${myRole}`), {
+        key: selectedMoodKey,
+        level: selectedLevel,
+        ts: Date.now()
+      });
+    }
+  };
+
+  // ── 감정 렌더링 ──
   function listenMoods() {
     onValue(ref(db, 'moods'), snap => renderMoods(snap.val() || {}));
   }
 
-  window.setMood = function(emoji) {
-    set(ref(db, `moods/${myRole}`), { emoji, ts: Date.now() });
-  };
+  function getMoodDesc(key, level) {
+    if (!key || !level) return '';
+    return LEVEL_DESC[key]?.[level-1] || '';
+  }
 
   function renderMoods(data) {
     const partnerRole = myRole === "boyfriend" ? "girlfriend" : "boyfriend";
-    const myEmoji = data[myRole]?.emoji || null;
-    const partnerEmoji = data[partnerRole]?.emoji || null;
+    const myData = data[myRole] || {};
+    const partnerData = data[partnerRole] || {};
+    const myKey = myData.key || null;
+    const myLevel = myData.level || null;
+    const partnerKey = partnerData.key || null;
+    const partnerLevel = partnerData.level || null;
     const r = ROLES[myRole];
     const pr = ROLES[partnerRole];
 
-    document.querySelectorAll('.mood-btn').forEach(btn =>
-      btn.classList.toggle('selected', btn.dataset.mood === myEmoji));
+    // 내 버튼 하이라이트 복원
+    if (myKey) {
+      document.querySelectorAll('.mood-btn').forEach(btn =>
+        btn.classList.toggle('selected', btn.dataset.key === myKey));
+      selectedMoodKey = myKey;
+      selectedLevel = myLevel;
+    }
 
+    // 내 카드
     const myCard = document.getElementById('my-mood-card');
-    if (myEmoji && MOOD[myEmoji]) {
-      const m = MOOD[myEmoji];
+    if (myKey && MOOD[myKey]) {
+      const m = MOOD[myKey];
+      const intensityBar = renderIntensityBar(myLevel, m.color);
       myCard.style.background = m.bg;
-      myCard.innerHTML = `<div class="sc-label"><span class="role-badge ${r.badge}">${r.label}</span></div><div class="sc-emoji">${myEmoji}</div><div class="sc-mood">${m.desc}</div>`;
+      myCard.innerHTML = `
+        <div class="sc-label"><span class="role-badge ${r.badge}">${r.label}</span></div>
+        <div class="sc-emoji">${m.emoji}</div>
+        <div class="sc-mood">${getMoodDesc(myKey, myLevel)}</div>
+        ${intensityBar}`;
     } else {
       myCard.style.background = "rgba(237,233,254,0.18)";
       myCard.innerHTML = `<div class="sc-label"><span class="role-badge ${r.badge}">${r.label}</span></div><div class="sc-emoji" style="opacity:.22">❓</div><div class="sc-mood" style="color:#b09ec9">아직 선택 전</div>`;
     }
 
+    // 파트너 카드
     const partnerCard = document.getElementById('partner-mood-card');
-    if (partnerEmoji && MOOD[partnerEmoji]) {
-      const m = MOOD[partnerEmoji];
+    if (partnerKey && MOOD[partnerKey]) {
+      const m = MOOD[partnerKey];
+      const intensityBar = renderIntensityBar(partnerLevel, m.color);
       partnerCard.style.background = m.bg;
-      partnerCard.innerHTML = `<div class="sc-label"><span class="role-badge ${pr.badge}">${pr.label}</span></div><div class="sc-emoji">${partnerEmoji}</div><div class="sc-mood">${m.desc}</div>`;
+      partnerCard.innerHTML = `
+        <div class="sc-label"><span class="role-badge ${pr.badge}">${pr.label}</span></div>
+        <div class="sc-emoji">${m.emoji}</div>
+        <div class="sc-mood">${getMoodDesc(partnerKey, partnerLevel)}</div>
+        ${intensityBar}`;
     } else {
       partnerCard.style.background = "rgba(252,231,243,0.18)";
       partnerCard.innerHTML = `<div class="sc-label"><span class="role-badge ${pr.badge}">${pr.label}</span></div><div class="sc-emoji" style="opacity:.22">💤</div><div class="sc-mood" style="color:#b09ec9">아직 선택 안 했어요</div>`;
     }
 
+    // 배너
     const banner = document.getElementById('mood-banner');
-    if (partnerEmoji) {
+    if (partnerKey) {
       let msg, icon;
-      if (["🌧","⛈"].includes(partnerEmoji)) { msg=`<strong>${pr.short}</strong>이(가) 지금 힘든 것 같아요 😔<br>따뜻한 말 한 마디 건네봐요 💜`; icon="💝"; }
-      else if (partnerEmoji === "☀️") { msg=`<strong>${pr.short}</strong>의 기분이 현재 최고예요! 🎉`; icon="🌟"; }
-      else { msg=`<strong>${pr.short}</strong>은(는) 지금 평범한 하루를 보내고 있어요 🌤`; icon="💬"; }
+      const isNeg = ["rainy","stormy","foggy","snowy"].includes(partnerKey);
+      const isHappy = partnerKey === "sunny";
+      if (isNeg && partnerLevel === 3) { msg=`<strong>${pr.short}</strong>이(가) 많이 힘든 것 같아요 😔<br>꼭 연락해줘요 💜`; icon="💝"; }
+      else if (isNeg) { msg=`<strong>${pr.short}</strong>이(가) 지금 좀 힘든 것 같아요<br>따뜻한 말 한 마디 어때요? 💬`; icon="💝"; }
+      else if (isHappy && partnerLevel === 3) { msg=`<strong>${pr.short}</strong>의 기분이 최고예요! 🎉`; icon="🌟"; }
+      else { msg=`<strong>${pr.short}</strong>은(는) 지금 ${MOOD[partnerKey].keyword}래요`; icon="💬"; }
       banner.innerHTML = `<span class="alert-icon">${icon}</span><div class="alert-text">${msg}</div>`;
       banner.style.display = "flex";
     } else {
       banner.style.display = "none";
     }
+  }
+
+  function renderIntensityBar(level, color) {
+    if (!level) return '';
+    const bars = [1,2,3].map(i =>
+      `<div class="int-bar ${i <= level ? 'active' : ''}" style="${i <= level ? `background:${color}` : ''}"></div>`
+    ).join('');
+    return `<div class="intensity-bar">${bars}</div>`;
   }
 
   // ── 일기 ──
@@ -154,7 +244,8 @@
       return;
     }
     el.innerHTML = list.map(([key, e], i) => {
-      const m = MOOD[e.mood] || MOOD["☀️"];
+      const mKey = Object.keys(MOOD).find(k => MOOD[k].emoji === e.mood) || 'sunny';
+      const m = MOOD[mKey] || MOOD['sunny'];
       const r = ROLES[e.role] || ROLES.boyfriend;
       const isMe = e.role === myRole;
       return `<div class="diary-card" style="border-left-color:${COLORS[i%4]}">
@@ -164,7 +255,7 @@
         </div>
         <div class="diary-content">"${e.content}"</div>
         <div class="diary-footer">
-          <span class="diary-mood-tag" style="${m.tag}">${e.mood} ${m.label}</span>
+          <span class="diary-mood-tag" style="${m.tag}">${m.emoji} ${m.label}</span>
           ${isMe ? `<button class="del-btn" onclick="deleteDiary('${key}')">🗑️</button>` : '<span></span>'}
         </div>
       </div>`;
@@ -237,7 +328,6 @@
     if (confirm('이 일정을 삭제할까요?')) remove(ref(db, `schedules/${key}`));
   };
 
-  // ── 토스트 ──
   function toast(msg, type = 'ok') {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -260,7 +350,6 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans KR',sans-serif;background:linear-gradient(145deg,#fff9f5 0%,#fdf0f8 45%,#f3f0ff 100%);min-height:100vh;color:#3d2c5e}
 
-/* ── 로그인 ── */
 #login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;text-align:center}
 .login-hearts{font-size:3.2rem;animation:float 3s ease-in-out infinite}
 .login-title{font-family:'Gowun Dodum',serif;font-size:2.4rem;color:#3d2c5e;margin-top:.6rem}
@@ -274,10 +363,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:linear-gradient(145deg,#ff
 .btn-gf{background:linear-gradient(135deg,#ec4899,#db2777);color:white;box-shadow:0 5px 16px rgba(219,39,119,.35)}
 .btn-gf:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(219,39,119,.45)}
 
-/* ── 메인 ── */
 #main-screen{display:none;max-width:700px;margin:0 auto;padding:0 1rem 4rem}
 
-/* ── 헤더 ── */
 .app-header{text-align:center;padding:1.8rem 1rem 1rem}
 .app-title{font-family:'Gowun Dodum',serif;font-size:1.9rem;color:#3d2c5e}
 .app-sub{font-size:.74rem;color:#b09ec9;letter-spacing:2px;margin-top:2px}
@@ -285,48 +372,59 @@ body{font-family:'Noto Sans KR',sans-serif;background:linear-gradient(145deg,#ff
 .dday-badge{background:linear-gradient(135deg,#f9a8d4,#c4b5fd);color:white;font-size:.74rem;font-weight:700;padding:4px 14px;border-radius:20px;box-shadow:0 2px 8px rgba(196,181,253,.4)}
 .logout-btn{background:none;border:none;font-size:.7rem;color:#c4b5fd;cursor:pointer;text-decoration:underline;font-family:inherit}
 
-/* ── 역할 뱃지 ── */
 .role-badge{display:inline-flex;align-items:center;font-size:.7rem;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .badge-bf{background:linear-gradient(135deg,#ede9fe,#ddd6fe);color:#5b21b6}
 .badge-gf{background:linear-gradient(135deg,#fce7f3,#fbcfe8);color:#9d174d}
 
-/* ── 탭 ── */
 .tab-nav{display:flex;background:rgba(255,255,255,.75);border-radius:18px;padding:6px;gap:5px;box-shadow:0 2px 14px rgba(180,160,220,.14);margin-bottom:1.4rem;backdrop-filter:blur(12px)}
 .tab-btn{flex:1;border:none;background:transparent;border-radius:13px;padding:9px 4px;font-family:'Noto Sans KR',sans-serif;font-size:.82rem;font-weight:500;color:#9b8ab8;cursor:pointer;transition:all .22s}
 .tab-btn.active{background:linear-gradient(135deg,#f9a8d4,#c4b5fd);color:white;box-shadow:0 3px 12px rgba(196,181,253,.5)}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 
-/* ── 섹션 타이틀 ── */
 .section-title{font-family:'Gowun Dodum',serif;font-size:1rem;color:#3d2c5e;font-weight:700;margin:1.2rem 0 .7rem;display:flex;align-items:center;gap:8px}
 .section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,#e9d5ff,transparent)}
 
-/* ── 카드 ── */
 .card{background:rgba(255,255,255,.88);border-radius:20px;padding:1.3rem;margin-bottom:1rem;box-shadow:0 4px 20px rgba(180,160,220,.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.95)}
 
-/* ── 감정 버튼 ── */
-.mood-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:.7rem 0}
+/* ── 6개 감정 그리드 ── */
+.mood-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:.7rem 0}
 .mood-btn{background:rgba(255,255,255,.82);border:2px solid #e9d5ff;border-radius:16px;padding:.85rem .3rem;text-align:center;cursor:pointer;transition:all .2s;font-family:inherit}
 .mood-btn:hover{transform:translateY(-3px);box-shadow:0 5px 14px rgba(0,0,0,.1)}
 .mood-btn.selected{border-color:#c4b5fd;background:linear-gradient(135deg,#fdf4ff,#f3f0ff);box-shadow:0 4px 14px rgba(196,181,253,.3);transform:translateY(-2px)}
 .mood-emoji{font-size:1.9rem}
-.mood-label{font-size:.67rem;font-weight:700;color:#9b8ab8;margin-top:4px}
+.mood-label{font-size:.67rem;font-weight:700;color:#9b8ab8;margin-top:2px}
+.mood-keyword{font-size:.6rem;color:#b09ec9;margin-top:1px}
 .mood-btn.selected .mood-label{color:#6d28d9}
+
+/* ── 단계 선택 패널 ── */
+#level-panel{display:none;background:rgba(255,255,255,.9);border-radius:18px;padding:1.1rem;margin:.5rem 0 .8rem;box-shadow:0 4px 16px rgba(180,160,220,.15);border:1.5px solid #e9d5ff;animation:fadeIn .2s ease}
+.level-title{font-family:'Gowun Dodum',serif;font-size:.95rem;color:#3d2c5e;font-weight:700;margin-bottom:.8rem;text-align:center}
+.level-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.level-btn{border:2px solid #e9d5ff;border-radius:14px;padding:.7rem .4rem;background:rgba(255,255,255,.8);cursor:pointer;text-align:center;transition:all .2s;font-family:inherit}
+.level-btn:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.level-btn.selected{background:linear-gradient(135deg,#f9a8d4,#c4b5fd);border-color:transparent;color:white;box-shadow:0 4px 14px rgba(196,181,253,.4)}
+.level-num{display:block;font-size:.65rem;font-weight:700;color:#9b8ab8;margin-bottom:3px}
+.level-desc{display:block;font-size:.72rem;color:#3d2c5e;line-height:1.3}
+.level-btn.selected .level-num,.level-btn.selected .level-desc{color:white}
+
+/* ── 강도 바 ── */
+.intensity-bar{display:flex;gap:4px;justify-content:center;margin-top:.4rem}
+.int-bar{width:20px;height:4px;border-radius:4px;background:#e9d5ff;transition:all .3s}
+.int-bar.active{background:#c4b5fd}
 
 /* ── 상태 카드 ── */
 .mood-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:.7rem 0}
 .status-card{border-radius:18px;padding:1.2rem .8rem;text-align:center;border:1.5px solid rgba(196,181,253,.28);transition:all .35s}
 .sc-label{margin-bottom:.4rem}
 .sc-emoji{font-size:2.6rem;display:block;margin:.2rem 0;animation:float 3s ease-in-out infinite}
-.sc-mood{font-size:.78rem;color:#7c6ea0;margin-top:.3rem}
+.sc-mood{font-size:.75rem;color:#7c6ea0;margin-top:.3rem}
 
-/* ── 배너 ── */
 .partner-alert{background:linear-gradient(135deg,#fdf4ff,#f0f9ff);border:1.5px solid #e9d5ff;border-radius:16px;padding:.85rem 1.1rem;margin:.6rem 0;display:none;align-items:center;gap:10px}
 .alert-icon{font-size:1.5rem;flex-shrink:0}
 .alert-text{font-size:.82rem;color:#5b21b6;font-weight:500;line-height:1.5}
 .alert-text strong{color:#3d2c5e}
 
-/* ── 입력 ── */
 input[type="text"],input[type="date"],textarea,select{width:100%;border:1.5px solid #e9d5ff;border-radius:13px;padding:.65rem .9rem;font-family:'Noto Sans KR',sans-serif;font-size:.87rem;color:#3d2c5e;background:rgba(255,255,255,.82);outline:none;transition:all .2s;margin-bottom:.65rem;-webkit-appearance:none}
 input:focus,textarea:focus,select:focus{border-color:#c4b5fd;box-shadow:0 0 0 3px rgba(196,181,253,.18)}
 textarea{resize:vertical;min-height:88px}
@@ -337,7 +435,6 @@ textarea{resize:vertical;min-height:88px}
 .checkbox-row input{width:auto;margin:0;accent-color:#c4b5fd}
 .checkbox-row label{font-size:.82rem;color:#7c6ea0;cursor:pointer}
 
-/* ── 일기 카드 ── */
 .diary-card{background:rgba(255,255,255,.88);border-radius:16px;padding:1rem 1.2rem;margin-bottom:.65rem;border-left:4px solid;box-shadow:0 3px 12px rgba(0,0,0,.055);transition:transform .2s}
 .diary-card:hover{transform:translateX(4px)}
 .diary-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.45rem}
@@ -346,7 +443,6 @@ textarea{resize:vertical;min-height:88px}
 .diary-footer{display:flex;align-items:center;justify-content:space-between;margin-top:.5rem}
 .diary-mood-tag{display:inline-block;font-size:.65rem;padding:2px 10px;border-radius:20px;font-weight:600}
 
-/* ── 일정 카드 ── */
 .schedule-card{background:rgba(255,255,255,.88);border-radius:16px;padding:1rem 1.1rem;margin-bottom:.65rem;display:flex;align-items:center;gap:.9rem;box-shadow:0 3px 12px rgba(0,0,0,.055);transition:all .2s}
 .schedule-card:hover{transform:translateY(-2px)}
 .schedule-card.important{background:linear-gradient(135deg,rgba(253,244,255,.92),rgba(243,240,255,.92));border:1.5px solid #e9d5ff}
@@ -364,7 +460,6 @@ textarea{resize:vertical;min-height:88px}
 .badge-past{background:#f3f4f6;color:#9ca3af}
 .badge-today{background:linear-gradient(135deg,#fde68a,#fca5a5);color:white;animation:pulse 2s infinite}
 
-/* ── 공통 ── */
 .del-btn{background:none;border:none;font-size:.85rem;cursor:pointer;opacity:.32;transition:all .2s;padding:4px 5px;border-radius:6px}
 .del-btn:hover{opacity:1;background:rgba(255,80,80,.08)}
 .empty-state{text-align:center;padding:2.5rem 1rem;color:#b09ec9}
@@ -373,21 +468,21 @@ textarea{resize:vertical;min-height:88px}
 .toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(80px);background:#3d2c5e;color:white;padding:.7rem 1.4rem;border-radius:24px;font-size:.82rem;font-weight:600;box-shadow:0 6px 24px rgba(0,0,0,.2);transition:transform .3s,opacity .3s;opacity:0;z-index:999;white-space:nowrap}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 .toast.toast-warn{background:#d97706}
-.footer{text-align:center;padding:2rem 0 1rem;color:#c4b5fd;font-size:.68rem;letter-spacing:1.5px}
 
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.65}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
 
 @media(max-width:480px){
-  .mood-grid{grid-template-columns:repeat(2,1fr)}
+  .mood-grid{grid-template-columns:repeat(3,1fr)}
   .app-title{font-size:1.55rem}
   .tab-btn{font-size:.75rem}
+  .level-btns{grid-template-columns:repeat(3,1fr)}
 }
 </style>
 </head>
 <body>
 
-<!-- 로그인 -->
 <div id="login-screen">
   <div class="login-hearts">💑</div>
   <div class="login-title">만두 둘만의 공간</div>
@@ -401,7 +496,6 @@ textarea{resize:vertical;min-height:88px}
   </div>
 </div>
 
-<!-- 메인 -->
 <div id="main-screen">
   <div class="app-header">
     <div class="app-title">💑 만두 둘만의 공간</div>
@@ -422,13 +516,44 @@ textarea{resize:vertical;min-height:88px}
   <!-- 감정 날씨 -->
   <div id="tab-mood" class="tab-panel active">
     <div class="section-title">🌈 지금 내 감정 날씨</div>
-    <p style="font-size:.8rem;color:#9b8ab8;margin-bottom:.6rem">기분을 선택하면 상대방에게 바로 전달돼요 💬</p>
+    <p style="font-size:.8rem;color:#9b8ab8;margin-bottom:.6rem">감정을 고른 뒤 단계를 선택하면 상대방에게 전달돼요 💬</p>
+
     <div class="mood-grid">
-      <button class="mood-btn" data-mood="☀️" onclick="setMood('☀️')"><div class="mood-emoji">☀️</div><div class="mood-label">맑음</div></button>
-      <button class="mood-btn" data-mood="🌤" onclick="setMood('🌤')"><div class="mood-emoji">🌤</div><div class="mood-label">구름</div></button>
-      <button class="mood-btn" data-mood="🌧" onclick="setMood('🌧')"><div class="mood-emoji">🌧</div><div class="mood-label">비</div></button>
-      <button class="mood-btn" data-mood="⛈" onclick="setMood('⛈')"><div class="mood-emoji">⛈</div><div class="mood-label">천둥</div></button>
+      <button class="mood-btn" data-key="sunny" onclick="selectMoodKey('sunny')">
+        <div class="mood-emoji">☀️</div>
+        <div class="mood-label">맑음</div>
+        <div class="mood-keyword">행복해</div>
+      </button>
+      <button class="mood-btn" data-key="cloudy" onclick="selectMoodKey('cloudy')">
+        <div class="mood-emoji">🌤</div>
+        <div class="mood-label">구름</div>
+        <div class="mood-keyword">그럭저럭</div>
+      </button>
+      <button class="mood-btn" data-key="rainy" onclick="selectMoodKey('rainy')">
+        <div class="mood-emoji">🌧</div>
+        <div class="mood-label">비</div>
+        <div class="mood-keyword">짜증나·예민해</div>
+      </button>
+      <button class="mood-btn" data-key="stormy" onclick="selectMoodKey('stormy')">
+        <div class="mood-emoji">⛈</div>
+        <div class="mood-label">천둥</div>
+        <div class="mood-keyword">화나</div>
+      </button>
+      <button class="mood-btn" data-key="foggy" onclick="selectMoodKey('foggy')">
+        <div class="mood-emoji">🌫️</div>
+        <div class="mood-label">안개</div>
+        <div class="mood-keyword">슬퍼·우울해</div>
+      </button>
+      <button class="mood-btn" data-key="snowy" onclick="selectMoodKey('snowy')">
+        <div class="mood-emoji">🌨</div>
+        <div class="mood-label">눈</div>
+        <div class="mood-keyword">힘들어</div>
+      </button>
     </div>
+
+    <!-- 단계 선택 패널 (감정 선택 시 나타남) -->
+    <div id="level-panel"></div>
+
     <div class="section-title">💌 우리의 현재 감정</div>
     <div class="mood-cards">
       <div id="my-mood-card" class="status-card">
@@ -456,6 +581,8 @@ textarea{resize:vertical;min-height:88px}
           <option value="🌤">🌤 구름</option>
           <option value="🌧">🌧 비</option>
           <option value="⛈">⛈ 천둥</option>
+          <option value="🌫️">🌫️ 안개</option>
+          <option value="🌨">🌨 눈</option>
         </select>
         <button class="btn-primary" onclick="saveDiary()">💾 저장하기</button>
       </div>
@@ -481,7 +608,9 @@ textarea{resize:vertical;min-height:88px}
     <div id="past-schedules" style="display:none"></div>
   </div>
 
-  <div class="footer">💑 만두 둘만의 공간 · made with love</div>
+  <div style="text-align:center;padding:2rem 0 1rem;color:#c4b5fd;font-size:.68rem;letter-spacing:1.5px">
+    💑 만두 둘만의 공간 · made with love
+  </div>
 </div>
 
 <div id="toast" class="toast"></div>
