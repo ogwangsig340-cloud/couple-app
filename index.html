@@ -121,7 +121,7 @@
     if (partnerEmoji) {
       let msg, icon;
       if (["🌧","⛈"].includes(partnerEmoji)) { msg=`<strong>${pr.short}</strong>이(가) 지금 힘든 것 같아요 😔<br>따뜻한 말 한 마디 건네봐요 💜`; icon="💝"; }
-      else if (partnerEmoji === "☀️") { msg=`<strong>${pr.short}</strong>의 기분이 오늘 최고예요! 🎉`; icon="🌟"; }
+      else if (partnerEmoji === "☀️") { msg=`<strong>${pr.short}</strong>의 기분이 현재 최고예요! 🎉`; icon="🌟"; }
       else { msg=`<strong>${pr.short}</strong>은(는) 지금 평범한 하루를 보내고 있어요 🌤`; icon="💬"; }
       banner.innerHTML = `<span class="alert-icon">${icon}</span><div class="alert-text">${msg}</div>`;
       banner.style.display = "flex";
